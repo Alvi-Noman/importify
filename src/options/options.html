@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Importify Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main>
+    <h1>Importify settings</h1>
+    <p class="sub">Import Alibaba products into your Shopify store. · <a href="../bot/bot.html" target="_blank">Open the bulk-import bot ↗</a></p>
+
+    <form id="form" autocomplete="off">
+      <section>
+        <h2>Shopify connection</h2>
+        <label>Store domain
+          <input name="shop" type="text" placeholder="your-store.myshopify.com" required>
+        </label>
+
+        <fieldset>
+          <legend>Authentication</legend>
+          <label class="inline"><input type="radio" name="authMode" value="token"> Admin API access token <span class="hint">(shpat_…)</span></label>
+          <label class="inline"><input type="radio" name="authMode" value="client"> Client ID + secret <span class="hint">(Dev Dashboard app, client credentials grant)</span></label>
+        </fieldset>
+
+        <div data-auth="token">
+          <label>Admin API access token
+            <input name="accessToken" type="password" placeholder="shpat_…">
+          </label>
+        </div>
+        <div data-auth="client">
+          <label>Client ID <input name="clientId" type="text"></label>
+          <label>Client secret <input name="clientSecret" type="password"></label>
+        </div>
+
+        <label>API version
+          <input name="apiVersion" type="text" placeholder="2026-10">
+        </label>
+        <p class="hint">Required scopes: <code>write_products</code>, <code>read_products</code>. To auto-publish to the Online Store also add <code>read_publications</code> and <code>write_publications</code>.</p>
+
+        <div class="row">
+          <button type="button" id="test">Test connection</button>
+          <span id="testResult"></span>
+        </div>
+      </section>
+
+      <section>
+        <h2>Default pricing <span class="hint">(in your store's currency)</span></h2>
+        <div class="grid">
+          <label>Price rule
+            <select name="priceMode">
+              <option value="fixed">Fixed price</option>
+              <option value="multiplier">Multiply Alibaba cost (×)</option>
+              <option value="markup">Add to Alibaba cost (+)</option>
+            </select>
+          </label>
+          <label>Price value <input name="priceValue" type="number" step="0.01" min="0"></label>
+          <span></span>
+          <label>Compare-at rule
+            <select name="compareAtMode">
+              <option value="fixed">Fixed compare-at price</option>
+              <option value="multiplier">Multiply price (×)</option>
+            </select>
+          </label>
+          <label>Compare-at value <span class="hint">(0 = none)</span> <input name="compareAtValue" type="number" step="0.01" min="0"></label>
+        </div>
+        <label class="inline"><input name="roundTo99" type="checkbox"> Round prices to end in .99</label>
+        <label class="inline"><input name="saveCost" type="checkbox"> Save the Alibaba price as “Cost per item” <span class="hint">(assumes your store currency is USD)</span></label>
+      </section>
+
+      <section>
+        <h2>Product defaults</h2>
+        <div class="grid">
+          <label>Status
+            <select name="status">
+              <option value="DRAFT">Draft</option>
+              <option value="ACTIVE">Active</option>
+            </select>
+          </label>
+          <label>Vendor <input name="vendor" type="text"></label>
+          <label>Product type <input name="productType" type="text"></label>
+        </div>
+        <label>Tags <input name="tags" type="text" placeholder="comma, separated"></label>
+        <label>Default collections <span class="hint">(optional – exact titles, one per line; pre-ticked in the "Add to Shopify" panel. You pick collections for each product there.)</span>
+          <textarea name="collections" rows="2"></textarea>
+        </label>
+        <label class="inline"><input name="publishOnline" type="checkbox"> Publish to the Online Store sales channel</label>
+        <label>Remove specification rows whose name contains <span class="hint">(comma separated)</span>
+          <input name="removeAttributes" type="text">
+        </label>
+        <label>Remove values containing <span class="hint">(e.g. "Business Services" inside a list)</span>
+          <input name="removeValues" type="text">
+        </label>
+        <p class="hint">Rows whose value is "no", "none" or "not included" are always removed.</p>
+      </section>
+
+      <section>
+        <h2>Description</h2>
+        <label class="inline"><input name="aiDescription" type="checkbox"> Write the description with AI</label>
+        <p class="hint">The AI writes an intro and a Key Features list from the product's title, variants, specifications and the supplier's text (leaving out factory and company info). Your Specifications table goes underneath. The bot uses it too.</p>
+        <label>AI provider
+          <select name="aiProvider">
+            <option value="openai">OpenAI</option>
+            <option value="claude">Claude (Anthropic)</option>
+          </select>
+        </label>
+        <div data-ai="openai">
+          <label>OpenAI API key <span class="hint">(from platform.openai.com → API keys; stored only in this browser)</span>
+            <input name="openaiApiKey" type="password" placeholder="sk-proj-…">
+          </label>
+          <label>OpenAI model <span class="hint">(any chat model your key can use)</span>
+            <input name="openaiModel" type="text" placeholder="gpt-5-mini">
+          </label>
+        </div>
+        <div data-ai="claude">
+          <label>Claude API key <span class="hint">(from console.anthropic.com → API keys; stored only in this browser)</span>
+            <input name="anthropicApiKey" type="password" placeholder="sk-ant-…">
+          </label>
+        </div>
+        <label>Instructions for the writer <span class="hint">(optional – tone, language, things to always mention)</span>
+          <textarea name="aiInstructions" rows="3" placeholder="e.g. Friendly tone. Mention that it makes a great gift."></textarea>
+        </label>
+        <label>Description language <span class="hint">(e.g. Bangla, English, or "Bangla with English product terms")</span>
+          <input name="aiLanguage" type="text" placeholder="Bangla (বাংলা)">
+        </label>
+        <p class="hint">You can leave the key fields empty and put the keys in the <code>.env</code> file in the extension folder instead (see <code>.env.example</code>).</p>
+        <p class="hint">Without AI, the description is the Specifications table plus, if ticked below, the supplier's own description.</p>
+        <label class="inline"><input name="includeSupplierDescription" type="checkbox"> Include the supplier's description (when AI is off)</label>
+        <label class="inline"><input name="includeDescriptionImages" type="checkbox"> Keep images inside the supplier description</label>
+      </section>
+
+      <div class="row sticky">
+        <button type="submit" class="primary">Save settings</button>
+        <span id="saved"></span>
+      </div>
+    </form>
+  </main>
+  <script src="../shared/defaults.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

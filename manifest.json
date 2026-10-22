@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "Importify – Alibaba to Shopify",
+  "short_name": "Importify",
+  "version": "1.1.0",
+  "description": "Add Alibaba products to your Shopify store with images, variants, title and description in one click.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": [
+    "https://*.myshopify.com/*",
+    "https://*.alibaba.com/*",
+    "https://*.alicdn.com/*",
+    "https://api.anthropic.com/*",
+    "https://api.openai.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "action": {
+    "default_title": "Importify settings"
+  },
+  "options_page": "src/options/options.html",
+  "content_scripts": [
+    {
+      "matches": ["https://*.alibaba.com/product-detail/*", "https://*.alibaba.com/product/*"],
+      "js": ["src/content/bridge.js"],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*.alibaba.com/product-detail/*", "https://*.alibaba.com/product/*"],
+      "js": ["src/shared/defaults.js", "src/shared/pricing.js", "src/content/scraper.js", "src/content/ui.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*.alibaba.com/productlist*", "https://*.alibaba.com/productgrouplist*"],
+      "js": ["src/shared/pricing.js", "src/content/list.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

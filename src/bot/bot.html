@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Importify Bot</title>
+  <link rel="stylesheet" href="bot.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Importify bot</h1>
+        <p class="sub">Step 1: scan the supplier's store to list every product. Step 2: review the list and run the bot to upload them one by one with your saved settings.</p>
+      </div>
+      <a href="../options/options.html" target="_blank" class="link">Settings ↗</a>
+    </header>
+
+    <section class="card">
+      <label>Supplier product list URL
+        <input id="listUrl" type="url" placeholder="https://poedagar.en.alibaba.com/productlist-1.html">
+      </label>
+      <div class="grid">
+        <label>Wait between products (seconds)
+          <span class="pair"><input id="minDelay" type="number" min="0" value="4"> to <input id="maxDelay" type="number" min="0" value="9"></span>
+        </label>
+        <label>Max list pages to scan <span class="hint">(blank = all)</span>
+          <input id="maxPages" type="number" min="1" placeholder="All">
+        </label>
+      </div>
+      <div class="row-head">
+        <label class="nolabel">Collections <span class="hint" id="colHint">Loading your collections…</span></label>
+        <input id="colSearch" type="search" placeholder="Search collections">
+      </div>
+      <div class="col-list" id="colList"></div>
+      <div class="actions">
+        <button id="scan" class="primary">1. Scan products</button>
+        <button id="run" class="primary" hidden>2. Run bot</button>
+        <button id="pause" hidden>Pause</button>
+        <button id="resume" class="primary" hidden>Resume</button>
+        <button id="rescan" hidden>Rescan store</button>
+        <button id="retry" hidden>Retry failed</button>
+        <button id="reset" class="danger" hidden>Reset</button>
+      </div>
+    </section>
+
+    <div id="banner" class="banner" hidden>
+      <div id="bannerText"></div>
+      <div id="bannerHint" class="hint"></div>
+    </div>
+
+    <section class="card">
+      <div class="phase" id="phase">Not started</div>
+      <div class="bar"><div id="barFill"></div></div>
+      <div class="stats">
+        <div><b id="sFound">0</b><span>Found</span></div>
+        <div><b id="sSelected">0</b><span>Selected</span></div>
+        <div><b id="sDone">0</b><span>Imported</span></div>
+        <div><b id="sExists">0</b><span>Already in Shopify</span></div>
+        <div><b id="sFailed">0</b><span>Failed</span></div>
+        <div><b id="sLeft">0</b><span>To import</span></div>
+        <div><b id="sEta">—</b><span>Time left</span></div>
+      </div>
+      <p class="hint">Keep this tab open while the bot runs. It works in its own Chrome window, so don't close that window. Progress is saved after every product.</p>
+    </section>
+
+    <section class="card">
+      <div class="toolbar">
+        <h2>Products</h2>
+        <input id="search" type="search" placeholder="Search title or ID">
+        <select id="filter">
+          <option value="all">All</option>
+          <option value="pending">To import</option>
+          <option value="done">Imported</option>
+          <option value="exists">Already in Shopify</option>
+          <option value="failed">Failed</option>
+          <option value="unselected">Unselected</option>
+        </select>
+        <button id="selectAll" class="small">Select shown</button>
+        <button id="selectNone" class="small">Unselect shown</button>
+        <span id="shown" class="hint"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th></th><th></th><th>Product</th><th>Alibaba price</th><th>Status</th></tr></thead>
+          <tbody id="rows"><tr><td colspan="5" class="empty">Scan the store to see its products here.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <details class="card">
+      <summary><h2>Activity log</h2></summary>
+      <ol id="log" class="log"></ol>
+    </details>
+  </main>
+  <script src="../shared/defaults.js"></script>
+  <script src="../shared/pricing.js"></script>
+  <script src="bot.js"></script>
+</body>
+</html>
