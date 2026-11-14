@@ -119,8 +119,8 @@ globalThis.ImportifyPricing = (() => {
     return tidy(String(title).replace(re, ' ')).replace(/\s+/g, ' ');
   }
 
-  // Description HTML: text only (tags, links and image URLs untouched). A sentence that mentions a
-  // blocked word ("We accept bulk orders.") is dropped; in short fragments only the word is removed.
+  // Description HTML: text only (tags, links and image URLs untouched). Only the blocked words
+  // themselves are removed, so the description keeps its full length.
   function cleanHtml(html, settings) {
     const re = blockedRegex(blockedWords(settings));
     if (!re || !html) return html || '';
@@ -128,16 +128,19 @@ globalThis.ImportifyPricing = (() => {
 
     let out = String(html).split(/(<[^>]*>)/).map((part) => {
       if (part.startsWith('<') || !has(part)) return part;
-      const sentences = part.split(/(?<=[.!?।])\s+/);
-      if (sentences.length > 1 || part.trim().split(/\s+/).length > 8) {
-        const kept = sentences.filter((s) => !has(s));
-        const joined = kept.join(' ');
-        return joined.trim() ? joined : '';
-      }
       const lead = part.match(/^\s*/)[0];
       const trail = part.match(/\s*$/)[0];
-      const rest = tidy(part.replace(re, ' '));
-      // "Custom logo available" → "available" says nothing; drop fragments that lose their meaning.
+      // Each sentence is cleaned on its own so tidy() fixes its edges, then joined back. A sentence
+      // left with under 4 words ("Bulk orders are welcome." → "are welcome.") is dropped.
+      const sentences = part.trim().split(/(?<=[.!?।])\s+/);
+      const rest = sentences
+        .map((s) => {
+          if (!has(s)) return s;
+          const cleaned = tidy(s.replace(re, ' ')).replace(/\s+/g, ' ');
+          return sentences.length > 1 && cleaned.split(/\s+/).length < 4 ? '' : cleaned;
+        })
+        .filter(Boolean).join(' ');
+      // "Custom logo available" → "available" says nothing; drop a fragment left with one word.
       const before = part.trim().split(/\s+/).length;
       const after = rest ? rest.split(/\s+/).length : 0;
       if (after < 2 && before > after) return '';
