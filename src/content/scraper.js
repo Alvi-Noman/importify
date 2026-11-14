@@ -356,7 +356,7 @@ globalThis.ImportifyScraper = (() => {
       warnings.push('Could not read Alibaba\'s structured product data; some fields were read from the page and may be incomplete.');
     }
 
-    const title = getTitle(product);
+    const title = globalThis.ImportifyPricing.cleanTitle(getTitle(product), settings);
     const images = getImages(product);
     const { cost, ladder } = getCost(product);
     const { options, variants } = getOptionsAndVariants(product, cost, warnings);
@@ -385,8 +385,10 @@ globalThis.ImportifyScraper = (() => {
       specsHtml: specs.html,
       supplierText,
       // Without AI: specs table + supplier description (if enabled). With AI this is only the fallback.
-      descriptionHtml: [specs.html, settings.includeSupplierDescription && !settings.aiDescription ? supplierHtml : '']
-        .filter(Boolean).join('\n\n'),
+      descriptionHtml: globalThis.ImportifyPricing.cleanHtml(
+        [specs.html, settings.includeSupplierDescription && !settings.aiDescription ? supplierHtml : ''].filter(Boolean).join('\n\n'),
+        settings
+      ),
       warnings
     };
   }

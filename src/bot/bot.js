@@ -254,6 +254,7 @@ async function importAll() {
     try {
       const settings = await loadSettings();
       let descriptionHtml;
+      let title;
       if (settings.aiDescription) {
         const ai = await chrome.runtime.sendMessage({
           type: 'GENERATE_DESCRIPTION',
@@ -264,11 +265,18 @@ async function importAll() {
             specsHtml: res.data.specsHtml,
             supplierText: res.data.supplierText
           }
-        });
-        if (!ai?.ok) throw new Error(`AI description: ${ai?.error || 'no response'}`);
-        descriptionHtml = ai.html;
+        }).catch((err) => ({ ok: false, error: err.message }));
+        if (ai?.ok) {
+          descriptionHtml = ai.html;
+          title = ai.title || undefined;
+        } else {
+          const aiError = `AI description: ${ai?.error || 'no response'}`;
+          if (FATAL.test(aiError)) throw new Error(aiError); // bad key / no credit: stop so it can be fixed
+          // Anything else (timeout, overload, cut off): import with the Specifications description instead.
+          log(`${aiError}. Imported with the Specifications description instead: ${res.data.title}`, 'warn');
+        }
       }
-      const payload = Pricing.buildAutoPayload(res.data, settings, { descriptionHtml, collections: state.collections });
+      const payload = Pricing.buildAutoPayload(res.data, settings, { title, descriptionHtml, collections: state.collections });
       const created = await chrome.runtime.sendMessage({ type: 'CREATE_PRODUCT', payload });
       if (!created?.ok) throw new Error(created?.error || 'Shopify did not respond');
 

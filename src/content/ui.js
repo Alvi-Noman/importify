@@ -177,11 +177,14 @@
         collectionsError: null,
         selectedCollections: new Set(),   // collection IDs
         aiWriting: false,
+        titleEdited: false,               // true once the user types in the title: AI won't overwrite it
+        duplicate: null,                  // { adminUrl } when this product is already in Shopify
         ai: ai?.ok ? ai : { enabled: settings.aiDescription, hasKey: false, provider: settings.aiProvider }
       };
       applyRule();
       render();
       loadCollections();
+      checkDuplicate();
       if (state.ai.enabled && state.ai.hasKey) writeDescription();
     } catch (err) {
       overlay.innerHTML = `<div class="modal"><div class="center">Couldn't read this product.<br><small>${esc(err.message || err)}</small><br><br><button class="btn" data-close>Close</button></div></div>`;
@@ -226,10 +229,11 @@
         <header><h2>Add to Shopify</h2><button class="x" data-close aria-label="Close">×</button></header>
         <div class="body">
           ${configured ? '' : `<div class="warn">Shopify isn't connected yet. <a data-settings>Open settings</a> to add your store.</div>`}
+          <div id="dupWarn"></div>
           ${warnings.map((w) => `<div class="warn">${esc(w)}</div>`).join('')}
 
           <div>
-            <span class="label">Title</span>
+            <span class="label">Title <span class="hint" id="titleHint"></span></span>
             <input type="text" id="title" maxlength="255" value="${esc(data.title)}">
           </div>
 
@@ -379,6 +383,7 @@
 
     $('#upload').addEventListener('click', upload);
     $('#aiWrite').addEventListener('click', writeDescription);
+    $('#title').addEventListener('input', () => { state.titleEdited = true; $('#titleHint').textContent = ''; });
     $('#colSearch').addEventListener('input', renderCollections);
     $('#colList').addEventListener('change', (e) => {
       const id = e.target.dataset.col;
@@ -427,6 +432,22 @@
     hint.textContent = n ? `${n} selected` : 'None selected';
   }
 
+  // ---------- duplicate check ----------
+
+  async function checkDuplicate() {
+    const current = state;
+    const res = await chrome.runtime.sendMessage({ type: 'CHECK_IMPORTED', sourceUrl: state.data.sourceUrl }).catch(() => null);
+    if (state !== current || !res?.ok || !res.imported) return;
+    state.duplicate = { adminUrl: res.adminUrl };
+    const box = $('#dupWarn');
+    if (box) {
+      box.className = 'warn';
+      box.innerHTML = `<strong>Already imported.</strong> This product is already in your Shopify store – uploading again creates a duplicate. <a href="${esc(res.adminUrl)}" target="_blank" rel="noopener">Open it in Shopify ↗</a>`;
+    }
+    const btn = $('#upload');
+    if (btn) btn.textContent = 'Upload again (duplicate)';
+  }
+
   // ---------- AI description ----------
 
   async function writeDescription() {
@@ -461,6 +482,10 @@
     if (res?.ok) {
       desc.value = res.html;
       hint.textContent = `Written by AI (${res.model}) – edit freely`;
+      if (res.title && !state.titleEdited) {
+        $('#title').value = res.title;
+        $('#titleHint').textContent = `Rewritten by AI – original: ${data.title}`;
+      }
     } else {
       hint.textContent = `AI description failed: ${res?.error || 'unknown error'}`;
       hint.classList.add('err');

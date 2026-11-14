@@ -22,7 +22,10 @@ globalThis.IMPORTIFY_DEFAULTS = {
   productType: '',
   tags: 'alibaba-import',
   collections: '',          // default collection titles (pre-ticked in the picker), one per line
-  publishOnline: false,     // publish to the Online Store sales channel
+  publishOnline: true,      // publish to the Online Store sales channel
+
+  // Words/phrases removed from titles and descriptions (comma separated, whole words, any case)
+  blockedWords: 'wholesale, wholesaler, wholesalers, wholesales, wholesaling, wholesale price, bulk, in bulk, bulk order, bulk orders, bulk buy, bulk price, bulk purchase, factory, factory price, factory direct, direct factory, factory outlet, factory supply, factories, manufacturer, manufacturers, manufacturing, supplier, suppliers, distributor, distributors, OEM, ODM, MOQ, low MOQ, small MOQ, minimum order, minimum order quantity, B2B, dropship, dropshipping, drop shipping, private label, custom logo, customized logo, customizable logo, trade assurance, low price, lowest price, cheap price, পাইকারি মূল্যে, পাইকারি দাম, পাইকারি, বাল্ক, কারখানা, সরবরাহকারী, প্রস্তুতকারক',
 
   // AI description (Claude)
   aiDescription: true,      // write the description with AI (needs an API key)
@@ -30,7 +33,8 @@ globalThis.IMPORTIFY_DEFAULTS = {
   openaiApiKey: '',
   openaiModel: 'gpt-5-mini',
   anthropicApiKey: '',
-  aiLanguage: 'Bangla (বাংলা)', // language the AI writes the description in
+  aiLanguage: 'English',    // language the AI writes the title and description in
+  aiTitle: true,            // let the AI rewrite the Alibaba title too (with the description)
   aiInstructions: '',       // extra guidance for the writer, e.g. tone
   includeSupplierDescription: true,
   includeDescriptionImages: true,
@@ -73,5 +77,18 @@ globalThis.IMPORTIFY_MIGRATIONS[5] = {
 // v6: AI descriptions in Bangla
 globalThis.IMPORTIFY_MIGRATIONS[6] = {
   aiLanguage: 'Bangla (বাংলা)'
+};
+// v7: publish every imported product to the Online Store
+globalThis.IMPORTIFY_MIGRATIONS[7] = {
+  publishOnline: true
+};
+// v8: keep "wholesale", "bulk" and similar trade words out of titles and descriptions
+globalThis.IMPORTIFY_MIGRATIONS[8] = {
+  blockedWords: globalThis.IMPORTIFY_DEFAULTS.blockedWords
+};
+// v9: everything in English; AI rewrites titles too
+globalThis.IMPORTIFY_MIGRATIONS[9] = {
+  aiLanguage: 'English',
+  aiTitle: true
 };
 globalThis.IMPORTIFY_RULES_VERSION = globalThis.IMPORTIFY_MIGRATIONS.length - 1;

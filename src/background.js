@@ -126,14 +126,17 @@ async function shopifyGraphQL(query, variables = {}, attempt = 0) {
 const PRODUCT_SET = `
   mutation ImportifyProductSet($input: ProductSetInput!, $synchronous: Boolean!) {
     productSet(input: $input, synchronous: $synchronous) {
-      product { id title handle }
+      product {
+        id title handle
+        variants(first: 250) { nodes { sku } }
+      }
       userErrors { field message code }
     }
   }`;
 
 const PUBLICATIONS = `
   query ImportifyPublications {
-    publications(first: 25) { nodes { id name } }
+    publications(first: 50) { nodes { id catalog { title } } }
   }`;
 
 const PUBLISH = `
@@ -182,21 +185,130 @@ async function resolveCollections(titles) {
   return ids;
 }
 
+// ---------- SKUs ----------
+// Modern SKU format: TYPE-CODE[-OPT1[-OPT2[-OPT3]]], e.g. HDP-7K2MQX-RED-XL
+//   TYPE  3-letter product type code ("Headphones" → HDP)
+//   CODE  6-char product code derived from the Alibaba ID (same product → same code), Crockford
+//         base32 so it never contains the look-alike letters I, L, O, U
+//   OPT   short standard codes per option value (Black → BLK, Extra Large → XL, 128GB → 128GB)
+// Uppercase A–Z/0–9 and hyphens only; no spaces, no supplier IDs exposed.
+
+const SKU_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+const SKU_COLORS = {
+  black: 'BLK', white: 'WHT', red: 'RED', blue: 'BLU', navy: 'NVY', 'navy blue': 'NVY', 'sky blue': 'SKY',
+  'light blue': 'LBL', 'dark blue': 'DBL', 'royal blue': 'RBL', green: 'GRN', 'dark green': 'DGN', 'light green': 'LGN',
+  'army green': 'ARM', olive: 'OLV', yellow: 'YLW', orange: 'ORG', pink: 'PNK', 'light pink': 'LPK', 'hot pink': 'HPK',
+  purple: 'PUR', violet: 'VIO', brown: 'BRN', 'dark brown': 'DBR', beige: 'BGE', khaki: 'KHK', grey: 'GRY', gray: 'GRY',
+  'dark grey': 'DGY', 'dark gray': 'DGY', 'light grey': 'LGY', 'light gray': 'LGY', silver: 'SLV', gold: 'GLD',
+  'rose gold': 'RGD', transparent: 'CLR', clear: 'CLR', multicolor: 'MLT', multicolour: 'MLT', 'multi color': 'MLT',
+  'multi colour': 'MLT', camel: 'CML', burgundy: 'BUR', wine: 'WIN', 'wine red': 'WIN', coffee: 'COF', cream: 'CRM',
+  ivory: 'IVR', teal: 'TEL', cyan: 'CYN', apricot: 'APR', champagne: 'CHP', mint: 'MNT', 'mint green': 'MNT',
+  lavender: 'LAV', rose: 'RSE', 'rose red': 'RSR', maroon: 'MRN', turquoise: 'TRQ', fuchsia: 'FUC', coral: 'CRL',
+  tan: 'TAN', charcoal: 'CHR', natural: 'NAT', wood: 'WOD', bronze: 'BRZ', copper: 'CPR'
+};
+
+const SKU_SIZES = {
+  'extra small': 'XS', small: 'S', medium: 'M', large: 'L', 'extra large': 'XL',
+  'one size': 'OS', 'free size': 'OS', freesize: 'OS', 'one-size': 'OS'
+};
+
+const SKU_NOISE = new Set(['new', 'hot', 'sale', 'best', 'top', 'high', 'quality', 'custom', 'wholesale', 'factory',
+  'cheap', 'premium', 'professional', 'portable', 'mini', 'set', 'pcs', 'piece', 'pieces', 'pack', 'style', 'design',
+  'fashion', 'product', 'products', 'item', 'oem', 'odm', 'logo', 'supplier']);
+
+const skuClean = (str) => String(str ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '')
+  .replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/(\d)[.,](\d)/g, '$1p$2').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+// "headphones" → HDP, "bottle" → BTL, "mug" → MUG: first letter + following consonants.
+function skuAbbr(word, len = 3) {
+  const w = word.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (w.length <= len) return w;
+  let out = w[0];
+  for (const ch of w.slice(1)) {
+    if (out.length >= len) break;
+    if (!'AEIOU'.includes(ch) && ch !== out[out.length - 1]) out += ch;
+  }
+  for (const ch of w.slice(1)) { if (out.length >= len) break; if (!out.includes(ch)) out += ch; }
+  return out.slice(0, len);
+}
+
+// Product type code from the Shopify product type, else the main noun of the title.
+function skuTypeCode(p) {
+  const source = skuClean(p.productType) || skuClean(String(p.title || '').split(/\b(?:with|for|and|in|of|to|by)\b|[,|(/]|\s[-–—]\s/i)[0].replace(/(\w)-(\w)/g, '$1$2'));
+  const words = source.split(' ').filter((w) => /^[a-z]{3,}$/.test(w) && !SKU_NOISE.has(w));
+  return words.length ? skuAbbr(words[words.length - 1]) : 'PRD';
+}
+
+// 6-char product code: FNV-1a hash of the Alibaba ID (stable), or of title + time when there's no ID.
+function skuProductCode(p) {
+  const id = globalThis.ImportifyPricing.productIdFromUrl(p.sourceUrl);
+  const seed = id || `${p.title || ''}|${Date.now()}|${Math.random()}`;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  let code = '';
+  for (let i = 0; i < 6; i++) { code += SKU_ALPHABET[h % 32]; h = Math.floor(h / 32); }
+  return code;
+}
+
+// Option value → short code, e.g.
+//   Black → BLK · Matte Black → MBLK · Extra Large → XL · 2XL → 2XL · 750 ML → 750ML
+//   iPhone 15 Pro Max → I15PM · EU 42 → EU42 · Leather → LTH · With Charger → WC
+function skuOptionCode(value) {
+  const v = skuClean(value);
+  if (!v) return '';
+  if (SKU_COLORS[v]) return SKU_COLORS[v];
+  if (SKU_SIZES[v]) return SKU_SIZES[v];
+  const compact = v.replace(/ /g, '').toUpperCase();
+  if (/^(X{0,4}S|M|X{0,4}L|\dX{1,2}L|\dXS)$/.test(compact)) return compact;
+  if (/^\d+(\.\d+)?\s?[a-z]{1,4}$/.test(v)) return compact.slice(0, 8); // 750 ML → 750ML, 1.5L → 1P5L
+  const words = v.split(' ');
+  if (words.length === 1) return /\d/.test(v) ? compact.slice(0, 8) : skuAbbr(v);
+  // "matte black" → modifier initials + colour code
+  const colourAt = words.findIndex((w, i) => SKU_COLORS[words.slice(i).join(' ')]);
+  if (colourAt > 0) return (words.slice(0, colourAt).map((w) => w[0]).join('') + SKU_COLORS[words.slice(colourAt).join(' ')]).toUpperCase().slice(0, 6);
+  // Words with digits and 1–2 letter words (EU, S24) stay whole; other words become initials.
+  return words.map((w) => (/\d/.test(w) || w.length <= 2 ? w : w[0])).join('').toUpperCase().slice(0, 8);
+}
+
+// One unique SKU per variant. A SKU already set on a variant (v.sku) is kept if it's unique.
+function generateSkus(p) {
+  const base = `${skuTypeCode(p)}-${skuProductCode(p)}`;
+  if (p.variants.length <= 1) return p.variants.map((v) => (v.sku || '').trim() || base);
+
+  const counts = {};
+  p.variants.forEach((v) => { const s = (v.sku || '').trim(); if (s) counts[s] = (counts[s] || 0) + 1; });
+
+  const used = new Set();
+  return p.variants.map((v, i) => {
+    const own = (v.sku || '').trim();
+    if (own && counts[own] === 1 && !used.has(own)) { used.add(own); return own; }
+
+    const parts = (v.values || []).map(skuOptionCode).filter(Boolean);
+    const candidate = `${base}-${parts.length ? parts.join('-') : String(i + 1).padStart(2, '0')}`;
+    let sku = candidate;
+    for (let n = 2; used.has(sku); n++) sku = `${candidate}-${n}`;
+    used.add(sku);
+    return sku;
+  });
+}
+
 function buildProductSetInput(p, collectionIds = []) {
   const imageUrls = [...new Set([...p.images, ...p.variants.map((v) => v.image).filter(Boolean)])];
   const hasOptions = p.options.length > 0;
+  const skus = generateSkus(p);
 
   const productOptions = hasOptions
     ? p.options.map((o, i) => ({ name: o.name, position: i + 1, values: o.values.map((name) => ({ name })) }))
     : [{ name: 'Title', position: 1, values: [{ name: 'Default Title' }] }];
 
-  const variants = p.variants.map((v) => {
+  const variants = p.variants.map((v, idx) => {
     const variant = {
       optionValues: hasOptions
         ? v.values.map((name, i) => ({ optionName: p.options[i].name, name }))
         : [{ optionName: 'Title', name: 'Default Title' }],
       price: v.price,
-      inventoryItem: { tracked: false }
+      inventoryItem: { tracked: false, sku: skus[idx] }
     };
     if (v.compareAtPrice) variant.compareAtPrice = v.compareAtPrice;
     if (v.cost) variant.inventoryItem.cost = v.cost;
@@ -224,7 +336,7 @@ function buildProductSetInput(p, collectionIds = []) {
 
 async function publishToOnlineStore(productId) {
   const { data } = await shopifyGraphQL(PUBLICATIONS);
-  const online = data.publications.nodes.find((n) => /online store/i.test(n.name || ''));
+  const online = data.publications.nodes.find((n) => /online store/i.test(n.catalog?.title || ''));
   if (!online) throw new Error('Online Store sales channel not found.');
   const { data: pub } = await shopifyGraphQL(PUBLISH, { id: productId, input: [{ publicationId: online.id }] });
   const errors = pub.publishablePublish.userErrors;
@@ -234,6 +346,16 @@ async function publishToOnlineStore(productId) {
 async function createProduct(payload) {
   // The panel's collection picker sends IDs; the bot sends titles.
   const collectionIds = payload.collectionIds?.length ? payload.collectionIds : await resolveCollections(payload.collections);
+
+  // Final pass: no "wholesale", "bulk", … in what reaches Shopify (covers manual edits and the bot).
+  const settings = await getSettings();
+  const cleanTitle = globalThis.ImportifyPricing.cleanTitle(payload.title, settings);
+  payload = {
+    ...payload,
+    title: cleanTitle.length >= 3 ? cleanTitle : payload.title,
+    descriptionHtml: globalThis.ImportifyPricing.cleanHtml(payload.descriptionHtml, settings)
+  };
+
   const input = buildProductSetInput(payload, collectionIds);
   const { data, shop } = await shopifyGraphQL(PRODUCT_SET, { input, synchronous: true });
   const result = data.productSet;
@@ -243,11 +365,16 @@ async function createProduct(payload) {
 
   const product = result.product;
   const warnings = [];
+
+  // Verify Shopify actually stored a SKU on every variant.
+  const saved = product.variants?.nodes || [];
+  const missing = saved.filter((v) => !v.sku).length;
+  if (missing) warnings.push(`${missing} of ${saved.length} variant(s) were saved without a SKU.`);
   if (payload.publishOnline) {
     try {
       await publishToOnlineStore(product.id);
     } catch (err) {
-      warnings.push(`Product created, but publishing to the Online Store failed: ${err.message} (needs the write_publications scope).`);
+      warnings.push(`Product created, but publishing to the Online Store failed: ${err.message} (needs the read_publications and write_publications scopes).`);
     }
   }
 
@@ -274,7 +401,7 @@ const DESCRIPTION_SYSTEM = `You write product descriptions for an online store's
 
 Write a description that helps a shopper decide to buy this product.
 
-Output format: HTML only (no Markdown, no code fences, no text before or after the HTML):
+Output format: HTML only (no Markdown, no code fences, no text before or after the HTML), except that when the request asks for a title, the very first line is the title (see below):
 <p>An opening paragraph of 2–3 sentences about the product and who it's for.</p>
 <h3>Key Features</h3>
 <ul><li>4–7 short, concrete feature bullets</li></ul>
@@ -285,10 +412,29 @@ Rules:
 - Leave out everything about the supplier: company history, factory, employees, markets, MOQ, OEM/ODM, samples, mould making, customization, shipping, payment, lead times, contact details, and "why choose us" text.
 - Don't mention Alibaba, suppliers, wholesale, prices, boxes or packaging.
 - If the supplier text describes other products, ignore it and rely on the title, options and specifications.
-- Write everything, including the "Key Features" heading, in the language the request asks for. Keep brand names, model numbers and units (mm, g, BAR) as they are.`;
+- Write everything, including the "Key Features" heading, in the language the request asks for. Keep brand names, model numbers and units (mm, g, BAR) as they are.
 
-function describeProductForPrompt(p, instructions, language) {
+Title (only when the request asks for one): put it on the first line as "TITLE: <title>", then the HTML on the next line.
+- A clean store product title, 40–80 characters, Title Case, in the requested language.
+- Structure: [Brand, only if a real brand is in the source] + product type + 1–3 key attributes (material, size, feature, audience). Example: "Poedagar Men's Quartz Watch, Waterproof Luminous Stainless Steel".
+- No keyword stuffing or repeated words, no years, no "New Arrival", "Hot Sale", "Best", "Top", "High Quality", no ALL CAPS (except brand names and model codes), no emojis, no quotes.
+- Never invent a brand; never use "Generic" or "Unbranded".`;
+
+// Splits the AI output into an optional "TITLE: …" first line and the HTML description.
+function parseAiOutput(text) {
+  let rest = String(text || '').replace(/^\s*```(?:html)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+  let title = null;
+  const m = rest.match(/^\s*(?:\*\*)?TITLE:?(?:\*\*)?\s*(.+?)\s*(?:\r?\n|$)/i);
+  if (m) {
+    title = m[1].replace(/<[^>]+>/g, '').replace(/^["'“”]+|["'“”]+$/g, '').replace(/\s+/g, ' ').trim().slice(0, 255) || null;
+    rest = rest.slice(m[0].length).trim();
+  }
+  return { title, html: rest };
+}
+
+function describeProductForPrompt(p, instructions, language, wantTitle) {
   const parts = [`Product title: ${p.title}`];
+  if (wantTitle) parts.push('Also write a new product title (first line, "TITLE: …").');
   if (p.options?.length) {
     parts.push('Options:\n' + p.options.map((o) => `- ${o.name}: ${o.values.join(', ')}`).join('\n'));
   }
@@ -299,7 +445,7 @@ function describeProductForPrompt(p, instructions, language) {
     parts.push(`Supplier's description (raw; may contain irrelevant factory or company text):\n<supplier_text>\n${p.supplierText}\n</supplier_text>`);
   }
   if (instructions?.trim()) parts.push(`Store's instructions for the writer:\n${instructions.trim()}`);
-  parts.push(`Write the description in: ${(language || '').trim() || 'English'}`);
+  parts.push(`Write the ${wantTitle ? 'title and description' : 'description'} in: ${(language || '').trim() || 'English'}`);
   return parts.join('\n\n');
 }
 
@@ -390,14 +536,24 @@ async function generateDescription(product) {
     throw new Error(`No ${openai ? 'OpenAI' : 'Claude'} API key set. Add it to the .env file (then reload the extension) or in Importify settings.`);
   }
 
-  const prompt = describeProductForPrompt(product, settings.aiInstructions, settings.aiLanguage);
+  const blocked = globalThis.ImportifyPricing.blockedWords(settings);
+  const instructions = [settings.aiInstructions, blocked.length ? `Never use these words or phrases (or translations of them): ${blocked.join(', ')}.` : '']
+    .filter((s) => s && s.trim()).join('\n');
+  const wantTitle = settings.aiTitle !== false;
+  const prompt = describeProductForPrompt(product, instructions, settings.aiLanguage, wantTitle);
   const { text, model } = openai ? await writeWithOpenAI(settings, prompt) : await writeWithClaude(settings, prompt);
-  const html = text
-    .replace(/^\s*```(?:html)?\s*/i, '')
-    .replace(/\s*```\s*$/, '')
-    .trim();
-  if (!html) throw new Error('The AI returned an empty description.');
-  return { html: [html, product.specsHtml].filter(Boolean).join('\n\n'), model };
+  const parsed = parseAiOutput(text);
+  if (!parsed.html) throw new Error('The AI returned an empty description.');
+
+  // Title: cleaned of blocked words; ignored if the AI's attempt is unusably short.
+  let title = wantTitle && parsed.title ? globalThis.ImportifyPricing.cleanTitle(parsed.title, settings) : null;
+  if (title && title.length < 10) title = null;
+
+  return {
+    html: globalThis.ImportifyPricing.cleanHtml([parsed.html, product.specsHtml].filter(Boolean).join('\n\n'), settings),
+    title,
+    model
+  };
 }
 
 // ---------- import history (used by the bot to skip products already in Shopify) ----------
@@ -408,6 +564,38 @@ async function rememberImport(sourceUrl, adminUrl) {
   const { importedIds = {} } = await chrome.storage.local.get('importedIds');
   importedIds[id] = adminUrl;
   await chrome.storage.local.set({ importedIds });
+  // Keep the duplicate-check cache current without rescanning Shopify.
+  const { shopifyIdsCache } = await chrome.storage.session.get('shopifyIdsCache');
+  if (shopifyIdsCache) {
+    shopifyIdsCache.ids[id] = adminUrl;
+    await chrome.storage.session.set({ shopifyIdsCache });
+  }
+}
+
+// Alibaba product IDs of products that are in Shopify right now (deleted ones aren't), cached for 10 minutes.
+async function shopifyImportedIds(fresh = false) {
+  const { shopifyIdsCache } = await chrome.storage.session.get('shopifyIdsCache');
+  if (!fresh && shopifyIdsCache && shopifyIdsCache.at > Date.now() - 10 * 60_000) return shopifyIdsCache.ids;
+  const ids = {};
+  let after = null;
+  do {
+    const { data, shop } = await shopifyGraphQL(SOURCE_URLS, { after });
+    for (const node of data.products.nodes) {
+      const id = globalThis.ImportifyPricing.productIdFromUrl(node.metafield?.value);
+      if (id && !ids[id]) ids[id] = `https://${shop}/admin/products/${node.id.split('/').pop()}`;
+    }
+    after = data.products.pageInfo.hasNextPage ? data.products.pageInfo.endCursor : null;
+  } while (after);
+  await chrome.storage.session.set({ shopifyIdsCache: { at: Date.now(), ids } });
+  return ids;
+}
+
+// For the import panel: is this Alibaba product already in the Shopify store?
+async function checkImported(sourceUrl) {
+  const id = globalThis.ImportifyPricing.productIdFromUrl(sourceUrl);
+  if (!id) return { imported: false };
+  const ids = await shopifyImportedIds();
+  return ids[id] ? { imported: true, adminUrl: ids[id] } : { imported: false };
 }
 
 const SOURCE_URLS = `
@@ -421,17 +609,7 @@ const SOURCE_URLS = `
 // Alibaba product IDs already imported: local history merged with what's actually in Shopify.
 async function getImportedIds() {
   const { importedIds = {} } = await chrome.storage.local.get('importedIds');
-  const ids = { ...importedIds };
-  let after = null;
-  do {
-    const { data, shop } = await shopifyGraphQL(SOURCE_URLS, { after });
-    for (const node of data.products.nodes) {
-      const id = globalThis.ImportifyPricing.productIdFromUrl(node.metafield?.value);
-      if (id && !ids[id]) ids[id] = `https://${shop}/admin/products/${node.id.split('/').pop()}`;
-    }
-    after = data.products.pageInfo.hasNextPage ? data.products.pageInfo.endCursor : null;
-  } while (after);
-  return ids;
+  return { ...(await shopifyImportedIds(true)), ...importedIds };
 }
 
 // ---------- messaging ----------
@@ -471,6 +649,9 @@ async function handle(message) {
 
     case 'GET_IMPORTED_IDS':
       return { ok: true, ids: await getImportedIds() };
+
+    case 'CHECK_IMPORTED':
+      return { ok: true, ...(await checkImported(message.sourceUrl)) };
 
     // Timers in a background tab get throttled to once a minute; the service worker's don't.
     case 'SLEEP':

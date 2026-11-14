@@ -93,6 +93,9 @@
           <input name="removeValues" type="text">
         </label>
         <p class="hint">Rows whose value is "no", "none" or "not included" are always removed.</p>
+        <label>Blocked words <span class="hint">(comma separated – removed from titles and descriptions as whole words; sentences that mention them are dropped from descriptions, and the AI is told not to use them)</span>
+          <textarea name="blockedWords" rows="3"></textarea>
+        </label>
       </section>
 
       <section>
@@ -121,8 +124,9 @@
         <label>Instructions for the writer <span class="hint">(optional – tone, language, things to always mention)</span>
           <textarea name="aiInstructions" rows="3" placeholder="e.g. Friendly tone. Mention that it makes a great gift."></textarea>
         </label>
-        <label>Description language <span class="hint">(e.g. Bangla, English, or "Bangla with English product terms")</span>
-          <input name="aiLanguage" type="text" placeholder="Bangla (বাংলা)">
+        <label class="inline"><input name="aiTitle" type="checkbox"> Also rewrite the title with AI (short, clean store title instead of Alibaba's keyword list)</label>
+        <label>Language <span class="hint">(for the AI title and description, e.g. English or Bangla)</span>
+          <input name="aiLanguage" type="text" placeholder="English">
         </label>
         <p class="hint">You can leave the key fields empty and put the keys in the <code>.env</code> file in the extension folder instead (see <code>.env.example</code>).</p>
         <p class="hint">Without AI, the description is the Specifications table plus, if ticked below, the supplier's own description.</p>

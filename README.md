@@ -29,14 +29,14 @@ You can reopen settings at any time by clicking the extension's toolbar icon.
 1. Open any `alibaba.com/product-detail/...` page.
 2. Click the green **Add to Shopify** button in the bottom-right corner.
 3. Check the details:
-   - **Title**: edit as needed.
+   - **Title**: rewritten by AI into a short, clean store title (the original is shown above the field). Edit as needed; once you type in it, AI won't overwrite it. Turn this off in Settings → Description.
    - **Images**: click to include or exclude. The first selected image becomes the main image.
    - **Pricing**: multiply the Alibaba price, add a fixed amount, or set a fixed price. You can add an optional compare-at multiplier and round prices to end in .99. Every variant's price can also be edited by hand.
    - **Variants**: untick the ones you don't want.
-   - **Description**: written by AI (Claude) when a Claude API key is set in Settings: an intro and a Key Features list, followed by the Specifications table. Click **Write with AI** to rewrite it, or edit the HTML freely. Without AI it's the Specifications table plus, optionally, the supplier's description.
+   - **Description**: written by AI (OpenAI or Claude, in the language set in Settings; English by default) when an API key is set: an intro and a Key Features list, followed by the Specifications table. Click **Write with AI** to rewrite it, or edit the HTML freely. Without AI it's the Specifications table plus, optionally, the supplier's description.
    - **Collections**: tick any of your store's manual collections. Defaults from Settings are pre-ticked.
    - Vendor, product type, tags, and Draft or Active status.
-4. Click **Upload to Shopify**. You'll get a link to the new product in your admin.
+4. Click **Upload to Shopify**. You'll get a link to the new product in your admin. If the product is already in your store, the panel says so at the top (with a link to it) before you upload a duplicate.
 
 The Alibaba page URL is saved on the product as the metafield `importify.source_url`.
 

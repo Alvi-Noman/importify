@@ -59,7 +59,7 @@ globalThis.ImportifyPricing = (() => {
       };
     });
     return {
-      title: data.title,
+      title: extra.title || data.title,
       descriptionHtml: extra.descriptionHtml ?? data.descriptionHtml,
       vendor: (settings.vendor || '').trim(),
       productType: (settings.productType || '').trim(),
@@ -79,5 +79,81 @@ globalThis.ImportifyPricing = (() => {
     return ((settings.aiProvider === 'openai' ? settings.openaiApiKey : settings.anthropicApiKey) || '').trim();
   }
 
-  return { roundPrice, ruleFromSettings, priceFor, compareAtFor, splitLines, productIdFromUrl, buildAutoPayload, aiKeyFor };
+  // ---------- blocked words (wholesale, bulk, …) ----------
+
+  // Comma-separated words/phrases from settings. Whole-word, case-insensitive; works for Bangla too.
+  function blockedWords(settings) {
+    const list = splitCommas(settings?.blockedWords ?? globalThis.IMPORTIFY_DEFAULTS?.blockedWords);
+    return list.sort((a, b) => b.length - a.length); // longest first: "wholesale price" before "wholesale"
+  }
+
+  const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  function blockedRegex(words) {
+    if (!words.length) return null;
+    const body = words.map((w) => escapeRe(w).replace(/\s+/g, '[\\s-]+')).join('|');
+    // Letters/marks/digits around the match mean it's part of a longer word ("bulky" stays).
+    return new RegExp(`(?<![\\p{L}\\p{M}\\p{N}])(?:${body})(?![\\p{L}\\p{M}\\p{N}])`, 'giu');
+  }
+
+  // Tidies what's left after removing words: doubled spaces/separators, dangling "for"/"and", empty brackets.
+  function tidy(text) {
+    let t = text;
+    for (let i = 0; i < 3; i++) {
+      t = t
+        .replace(/\(\s*\)|\[\s*\]/g, ' ')
+        .replace(/\s+([,;:.!?।])/g, '$1')
+        .replace(/([,;:/|\-–—])(\s*[,;:/|\-–—])+/g, '$1')
+        .replace(/[ \t]{2,}/g, ' ')
+        .replace(/^[\s,;:/|\-–—]+|[\s,;:/|\-–—]+$/g, '')
+        .replace(/(?:^|\s)(?:for|and|with|or|of|in|to|&)\s*$/i, '')
+        .replace(/^\s*(?:for|and|with|or|of|&)\s+/i, '');
+    }
+    return t.trim();
+  }
+
+  // Title: just remove the words.
+  function cleanTitle(title, settings) {
+    const re = blockedRegex(blockedWords(settings));
+    if (!re || !title) return title || '';
+    return tidy(String(title).replace(re, ' ')).replace(/\s+/g, ' ');
+  }
+
+  // Description HTML: text only (tags, links and image URLs untouched). A sentence that mentions a
+  // blocked word ("We accept bulk orders.") is dropped; in short fragments only the word is removed.
+  function cleanHtml(html, settings) {
+    const re = blockedRegex(blockedWords(settings));
+    if (!re || !html) return html || '';
+    const has = (s) => { re.lastIndex = 0; return re.test(s); };
+
+    let out = String(html).split(/(<[^>]*>)/).map((part) => {
+      if (part.startsWith('<') || !has(part)) return part;
+      const sentences = part.split(/(?<=[.!?।])\s+/);
+      if (sentences.length > 1 || part.trim().split(/\s+/).length > 8) {
+        const kept = sentences.filter((s) => !has(s));
+        const joined = kept.join(' ');
+        return joined.trim() ? joined : '';
+      }
+      const lead = part.match(/^\s*/)[0];
+      const trail = part.match(/\s*$/)[0];
+      const rest = tidy(part.replace(re, ' '));
+      // "Custom logo available" → "available" says nothing; drop fragments that lose their meaning.
+      const before = part.trim().split(/\s+/).length;
+      const after = rest ? rest.split(/\s+/).length : 0;
+      if (after < 2 && before > after) return '';
+      return lead + rest + trail;
+    }).join('');
+
+    // Remove elements left empty, and spec rows whose name was removed.
+    for (let i = 0; i < 2; i++) {
+      out = out
+        .replace(/<tr>\s*<th>\s*<\/th>[\s\S]*?<\/tr>\s*/gi, '')
+        .replace(/<tr>\s*<th>[^<]*<\/th>\s*<td>\s*<\/td>\s*<\/tr>\s*/gi, '')
+        .replace(/<(li|p|h[1-6]|strong|b|em|span)(\s[^>]*)?>\s*<\/\1>\s*/gi, '')
+        .replace(/<ul(\s[^>]*)?>\s*<\/ul>\s*/gi, '');
+    }
+    return out.trim();
+  }
+
+  return { roundPrice, ruleFromSettings, priceFor, compareAtFor, splitLines, productIdFromUrl, buildAutoPayload, aiKeyFor, blockedWords, cleanTitle, cleanHtml };
 })();
